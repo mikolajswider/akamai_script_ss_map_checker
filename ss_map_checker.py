@@ -10,7 +10,7 @@ import os
 import argparse
 import configparser
 
-def get_properties(contractId, groupId, edgerc_path, section, switchkey):
+def get_properties(contractId, groupId, groupName, edgerc_path, section, switchkey):
     # setting up authentication as in https://github.com/akamai/AkamaiOPEN-edgegrid-python
     dict_list=[]
     edgerc = EdgeRc(edgerc_path)
@@ -26,10 +26,10 @@ def get_properties(contractId, groupId, edgerc_path, section, switchkey):
     http_status_code= http_response.status_code
     http_content = json.loads(http_response.text)
     for item in http_content['properties']['items']:
-        dict_list = dict_list + [{"latestVersion": item['latestVersion'], "propertyId": item['propertyId'], "contractId":contractId, "groupId": groupId, "propertyName":item['propertyName']}]
+        dict_list = dict_list + [{"latestVersion": item['latestVersion'], "propertyId": item['propertyId'], "contractId":contractId, "groupId": groupId, "groupName":groupName, "propertyName":item['propertyName']}]
     return (dict_list)
 
-def sort_properties_ss_map(ss_map, latestVersion, propertyId, contractId, groupId, edgerc_path, section, switchkey, propertyName):
+def sort_properties_ss_map(ss_map, latestVersion, propertyId, contractId, groupId, groupName, edgerc_path, section, switchkey, propertyName):
     # setting up authentication as in https://github.com/akamai/AkamaiOPEN-edgegrid-python
     answer_list = [[],[]]
     edgerc = EdgeRc(edgerc_path)
@@ -45,9 +45,9 @@ def sort_properties_ss_map(ss_map, latestVersion, propertyId, contractId, groupI
     http_status_code = http_response.status_code
     http_content = json.loads(http_response.text)    
     if ss_map in http_response.text:
-        answer_list[0] = answer_list[0] + [propertyName] 
+        answer_list[0] = answer_list[0] + [contractId +' > '+ groupName + ' > ' + propertyName] 
     else:
-        answer_list[1] = answer_list[1] + [propertyName]     
+        answer_list[1] = answer_list[1] + [contractId +' > '+ groupName + ' > ' + propertyName]   
     return(answer_list)
 
 def main():
@@ -63,7 +63,7 @@ def main():
     nb_properties = 0
     
     # defining inputs &  argparse
-    parser = argparse.ArgumentParser(prog="ss_map_checker.py v1.0", description="The ss_map_checker.py script finds all properties containing a given Site Shield Map, within a Customer Account. The script uses edgegrid for python, dnspython and argparse libraries. Contributors: Miko (mswider) as Chief Programmer")
+    parser = argparse.ArgumentParser(prog="ss_map_checker.py v1.1", description="The ss_map_checker.py script finds all properties containing a given Site Shield Map, within a Customer Account. The script uses edgegrid for python, dnspython and argparse libraries. Contributors: Miko (mswider) as Chief Programmer")
     parser.add_argument("ss_map", default=None, type=str, help="Site Shield Map to be tested")
     env_edgerc = os.getenv("AKAMAI_EDGERC")
     default_edgerc = env_edgerc if env_edgerc else os.path.join(os.path.expanduser("~"), ".edgerc")
@@ -82,61 +82,66 @@ def main():
     switchkey = args.switchkey
     enable_logs = args.enable_logs
 
+    # SS Map Check
+    if ('akamaiedge.net' in ss_map) or ('akamai.net' in ss_map):
+        print('\n' + ss_map + ' - SS Map Syntax Check Success')
 
-    # setting up authentication as in https://github.com/akamai/AkamaiOPEN-edgegrid-python
-    try:
-        edgerc = EdgeRc(edgerc_path)
-        baseurl = 'https://%s' % edgerc.get(section, "host")
-    except configparser.NoSectionError:
-        print("\nThe path to the .edgerc File or the Section Name provided is not correct. Please review your inuputs.\n")
-    else:
-        http_request = requests.Session()
-        http_request.auth = EdgeGridAuth.from_edgerc(edgerc, section)
-        # setting up request headers
-        headers ={}
-        headers['PAPI-Use-Prefixes']="true"
-        http_request.headers = headers
-        print('\nGetting the list of all groups and all associated contracts...')
-        #https://developer.akamai.com/api/core_features/property_manager/v1.html#getgroups
-        http_response = http_request.get(urljoin(baseurl, '/papi/v1/groups?accountSwitchKey='+switchkey))
-        http_status_code= http_response.status_code
-        http_content= json.loads(http_response.text)
-        # Checking the first API call response code to avoid any exceptions further on ...
-        if http_status_code == 200:
-            print('Getting the list of all properties...')
-            for item in http_content['groups']['items']:
-                nb_groups = nb_groups + 1
-                for contractId in item['contractIds']:
-                    nb_contracts = nb_contracts + 1
-                    dict_list = dict_list + get_properties(contractId, item['groupId'], edgerc_path, section, switchkey)
-            nb_properties = len(dict_list)
-            print('There are '+str(nb_groups)+' groups, '+str(nb_contracts)+ ' contracts and '+str(nb_properties)+' properties in the '+str(switchkey)+' account.')
-            print('\nProcessing all properties. This operation may take several minutes...')
-            for bloc in dict_list:
-                sorted = sort_properties_ss_map(ss_map, bloc['latestVersion'], bloc['propertyId'], bloc['contractId'], bloc['groupId'], edgerc_path, section, switchkey, bloc['propertyName'])
-                answer_list[0] = answer_list[0] + sorted[0]
-                answer_list[1] = answer_list[1] + sorted[1]
-                if enable_logs == 'True':
-                    print('Processing property '+ bloc['propertyName'] +'...')
-            len_answer_list = [len(answer_list[0]),len(answer_list[1])]
-
-            # Internal Script Check
-            if len_answer_list[0] + len_answer_list[1] == nb_properties:
-                print("\nInternal Script Check Success \n")
-
-                print('There are '+str(len_answer_list[0])+' properties containing the '+ss_map+' Site Shield Map.')
-                print('There are '+str(len_answer_list[1])+' properties that do not contain '+ss_map+' Site Shield Map.')
-                if len_answer_list[0] !=0:
-                    print('\nThe following properties contain the '+ss_map+' Site Shield Map:')
-                    print(*answer_list[0], sep = "\n")
-                if len_answer_list[1] !=0:
-                    print('\nThe following properties do not contain the '+ss_map+' Site Shield Map:')
-                    print(*answer_list[1], sep = "\n")
-            else:
-                print("\nInternal Script Check Failure \n ")
+        # setting up authentication as in https://github.com/akamai/AkamaiOPEN-edgegrid-python
+        try:
+            edgerc = EdgeRc(edgerc_path)
+            baseurl = 'https://%s' % edgerc.get(section, "host")
+        except configparser.NoSectionError:
+            print("\nThe path to the .edgerc File or the Section Name provided is not correct. Please review your inuputs.\n")
         else:
-            print("\nAPI call not successful!")
-            print(http_response.text)
-            
+            http_request = requests.Session()
+            http_request.auth = EdgeGridAuth.from_edgerc(edgerc, section)
+            # setting up request headers
+            headers ={}
+            headers['PAPI-Use-Prefixes']="true"
+            http_request.headers = headers
+            print('\nGetting the list of all groups and all associated contracts...')
+            #https://developer.akamai.com/api/core_features/property_manager/v1.html#getgroups
+            http_response = http_request.get(urljoin(baseurl, '/papi/v1/groups?accountSwitchKey='+switchkey))
+            http_status_code= http_response.status_code
+            http_content= json.loads(http_response.text)
+            # Checking the first API call response code to avoid any exceptions further on ...
+            if http_status_code == 200:
+                print('Getting the list of all properties...')
+                for item in http_content['groups']['items']:
+                    nb_groups = nb_groups + 1
+                    for contractId in item['contractIds']:
+                        nb_contracts = nb_contracts + 1
+                        dict_list = dict_list + get_properties(contractId, item['groupId'], item['groupName'], edgerc_path, section, switchkey)
+                nb_properties = len(dict_list)
+                print('There are '+str(nb_groups)+' groups, '+str(nb_contracts)+ ' contracts and '+str(nb_properties)+' properties in the '+str(switchkey)+' account.')
+                print('\nProcessing all properties. This operation may take several minutes...')
+                for bloc in dict_list:
+                    sorted = sort_properties_ss_map(ss_map, bloc['latestVersion'], bloc['propertyId'], bloc['contractId'], bloc['groupId'], bloc['groupName'], edgerc_path, section, switchkey, bloc['propertyName'])
+                    answer_list[0] = answer_list[0] + sorted[0]
+                    answer_list[1] = answer_list[1] + sorted[1]
+                    if enable_logs == 'True':
+                        print('Processing property '+ bloc['propertyName'] + ' within contract ' + bloc['contractId'] + ' and group ' + bloc['groupName'] + '...')
+                len_answer_list = [len(answer_list[0]),len(answer_list[1])]
+
+                # Internal Script Check
+                if len_answer_list[0] + len_answer_list[1] == nb_properties:
+                    print("\nInternal Script Check Success \n")
+
+                    print('There are '+str(len_answer_list[0])+' properties containing the '+ss_map+' Site Shield Map.')
+                    print('There are '+str(len_answer_list[1])+' properties that do not contain '+ss_map+' Site Shield Map.')
+                    if len_answer_list[0] !=0:
+                        print('\nThe following properties contain the '+ss_map+' Site Shield Map:')
+                        print(*answer_list[0], sep = "\n")
+                    if len_answer_list[1] !=0:
+                        print('\nThe following properties do not contain the '+ss_map+' Site Shield Map:')
+                        print(*answer_list[1], sep = "\n")
+                else:
+                    print("\nInternal Script Check Failure \n ")
+            else:
+                print("\nAPI Call Failure")
+                print(http_response.text)
+    else: 
+        print('\n' + ss_map + ' - SS Map Syntax Check Failure')
+
 if __name__ == '__main__':
     main()
