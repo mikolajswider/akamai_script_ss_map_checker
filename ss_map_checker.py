@@ -10,6 +10,26 @@ import os
 import argparse
 import configparser
 
+def check_ss_map(ss_map, edgerc_path, section, switchkey):
+    # setting up authentication as in https://github.com/akamai/AkamaiOPEN-edgegrid-python
+    answer = False
+    edgerc = EdgeRc(edgerc_path)
+    baseurl = 'https://%s' % edgerc.get(section, "host")
+    http_request = requests.Session()
+    http_request.auth = EdgeGridAuth.from_edgerc(edgerc, section)
+    # setting up request headers
+    #headers ={}
+    #headers['PAPI-Use-Prefixes']="true"
+    #http_request.headers = headers
+    # api call
+    http_response = http_request.get(urljoin(baseurl, '/siteshield/v1/maps?accountSwitchKey='+switchkey))
+    http_status_code= http_response.status_code
+    http_content = json.loads(http_response.text)
+    print(http_content)
+    if ss_map in http_content:
+        answer = True
+    return (answer)
+
 def get_properties(contractId, groupId, groupName, edgerc_path, section, switchkey):
     # setting up authentication as in https://github.com/akamai/AkamaiOPEN-edgegrid-python
     dict_list=[]
@@ -31,7 +51,8 @@ def get_properties(contractId, groupId, groupName, edgerc_path, section, switchk
 
 def sort_properties_ss_map(ss_map, latestVersion, propertyId, contractId, groupId, groupName, edgerc_path, section, switchkey, propertyName):
     # setting up authentication as in https://github.com/akamai/AkamaiOPEN-edgegrid-python
-    answer_list = [[],[]]
+    answer_list = [[],[],[]]
+    ss_map_apex = re.search('(.*).akamai(.*)',ss_map).group(1)
     edgerc = EdgeRc(edgerc_path)
     baseurl = 'https://%s' % edgerc.get(section, "host")
     http_request = requests.Session()
@@ -43,12 +64,20 @@ def sort_properties_ss_map(ss_map, latestVersion, propertyId, contractId, groupI
     # getting the list of groups and contracts associated to groups: https://developer.akamai.com/api/core_features/property_manager/v1.html#getgroups
     http_response = http_request.get(urljoin(baseurl, '/papi/v1/properties/'+propertyId+'/versions/'+str(latestVersion)+'/rules?contractId='+contractId+'&groupId='+groupId+'&accountSwitchKey='+switchkey))
     http_status_code = http_response.status_code
-    http_content = json.loads(http_response.text)    
-    if ss_map in http_response.text:
-        answer_list[0] = answer_list[0] + [contractId +' > '+ groupName + ' > ' + propertyName] 
+    http_content = json.loads(http_response.text)
+   
+    if (("customBehavior" in http_response.text) or ("customOverride" in http_response.text) or ("advanced" in http_response.text) or ("advancedOverride" in http_response.text)):
+        if (ss_map_apex in http_response.text):
+            answer_list[0] = answer_list[0] + [contractId +' > '+ groupName + ' > ' + propertyName]
+        else:
+            answer_list[2] = answer_list[2] + [contractId +' > '+ groupName + ' > ' + propertyName]
     else:
-        answer_list[1] = answer_list[1] + [contractId +' > '+ groupName + ' > ' + propertyName]   
+        if (ss_map in http_response.text):
+            answer_list[0] = answer_list[0] + [contractId +' > '+ groupName + ' > ' + propertyName]
+        else:
+            answer_list[1] = answer_list[1] + [contractId +' > '+ groupName + ' > ' + propertyName]
     return(answer_list)
+
 
 def main():
 
@@ -56,14 +85,15 @@ def main():
     dict_list = []
     
     # list of all property hostnames within the account that are cnamed to the input edge hostname
-    answer_list = [[],[]]
+    answer_list = [[],[],[]]
     
     nb_groups = 0
     nb_contracts = 0
     nb_properties = 0
-    
-    # defining inputs &  argparse
-    parser = argparse.ArgumentParser(prog="ss_map_checker.py v1.1", description="The ss_map_checker.py script finds all properties containing a given Site Shield Map, within a Customer Account. The script uses edgegrid for python, dnspython and argparse libraries. Contributors: Miko (mswider) as Chief Programmer")
+    continue_after_check = False
+
+    # defining inputs & argparse
+    parser = argparse.ArgumentParser(prog="ss_map_checker.py v2.0", description="The ss_map_checker.py script finds all properties containing a given Site Shield Map, within a Customer Account. The script uses edgegrid for python, dnspython and argparse libraries. Contributors: Miko (mswider) as Chief Programmer")
     parser.add_argument("ss_map", default=None, type=str, help="Site Shield Map to be tested")
     env_edgerc = os.getenv("AKAMAI_EDGERC")
     default_edgerc = env_edgerc if env_edgerc else os.path.join(os.path.expanduser("~"), ".edgerc")
@@ -73,6 +103,7 @@ def main():
     parser.add_argument("--section", help="Section Name in .edgerc File", required=False, default=default_edgerc_section)
     parser.add_argument("--switchkey", default="", required=False, help="Account SwitchKey")
     parser.add_argument("--enable_logs", default='False', required=False, help="Enable Logs", choices=['True', 'False'],)
+    parser.add_argument("--enable_map_check", default='False', required=False, help="Enable Map Check", choices=['True', 'False'],)
     args = parser.parse_args()
     
     # Adjusting argpare variables with variables already used in previous version of script
@@ -81,11 +112,17 @@ def main():
     section = args.section
     switchkey = args.switchkey
     enable_logs = args.enable_logs
+    enable_map_check = args.enable_map_check
 
-    # SS Map Check
-    if ('akamaiedge.net' in ss_map) or ('akamai.net' in ss_map):
-        print('\n' + ss_map + ' - SS Map Syntax Check Success')
+    # SS Map Check Logic
+    if enable_map_check == 'False':
+        continue_after_check = True
+    else:
+        if check_ss_map(ss_map, edgerc_path, section, switchkey)==True:
+            print('\n' + ss_map + ' - SS Map Check Success')
+            continue_after_check = True
 
+    if continue_after_check == True:
         # setting up authentication as in https://github.com/akamai/AkamaiOPEN-edgegrid-python
         try:
             edgerc = EdgeRc(edgerc_path)
@@ -119,29 +156,37 @@ def main():
                     sorted = sort_properties_ss_map(ss_map, bloc['latestVersion'], bloc['propertyId'], bloc['contractId'], bloc['groupId'], bloc['groupName'], edgerc_path, section, switchkey, bloc['propertyName'])
                     answer_list[0] = answer_list[0] + sorted[0]
                     answer_list[1] = answer_list[1] + sorted[1]
+                    answer_list[2] = answer_list[2] + sorted[2]
                     if enable_logs == 'True':
                         print('Processing property '+ bloc['propertyName'] + ' within contract ' + bloc['contractId'] + ' and group ' + bloc['groupName'] + '...')
-                len_answer_list = [len(answer_list[0]),len(answer_list[1])]
+                
+                # Creating the length list
+                len_answer_list = [len(answer_list[0]),len(answer_list[1]),len(answer_list[2])]
 
                 # Internal Script Check
-                if len_answer_list[0] + len_answer_list[1] == nb_properties:
+                if len_answer_list[0] + len_answer_list[1] + len_answer_list[2] == nb_properties:
                     print("\nInternal Script Check Success \n")
 
                     print('There are '+str(len_answer_list[0])+' properties containing the '+ss_map+' Site Shield Map.')
                     print('There are '+str(len_answer_list[1])+' properties that do not contain '+ss_map+' Site Shield Map.')
+                    print('There are '+str(len_answer_list[2])+' properties that need to be checked manually.')
+
                     if len_answer_list[0] !=0:
                         print('\nThe following properties contain the '+ss_map+' Site Shield Map:')
                         print(*answer_list[0], sep = "\n")
                     if len_answer_list[1] !=0:
                         print('\nThe following properties do not contain the '+ss_map+' Site Shield Map:')
                         print(*answer_list[1], sep = "\n")
+                    if len_answer_list[2] !=0:
+                        print('\nThe following properties need to be checked manually since these do not contain the '+ss_map+' Site Shield Map in their json Rule Tree but do contain Advanced/Custom Behavior or Advanced/Custom Override.')
+                        print(*answer_list[2], sep = "\n")
                 else:
                     print("\nInternal Script Check Failure \n ")
             else:
                 print("\nAPI Call Failure")
                 print(http_response.text)
     else: 
-        print('\n' + ss_map + ' - SS Map Syntax Check Failure')
+        print('\n' + ss_map + ' - SS Map Check Failure - The provided SS Map could not be found within the Account ' + switchkey + '.' )
 
 if __name__ == '__main__':
     main()
