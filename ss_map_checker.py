@@ -25,7 +25,6 @@ def check_ss_map(ss_map, edgerc_path, section, switchkey):
     http_response = http_request.get(urljoin(baseurl, '/siteshield/v1/maps?accountSwitchKey='+switchkey))
     http_status_code= http_response.status_code
     http_content = json.loads(http_response.text)
-    print(http_content)
     if ss_map in http_content:
         answer = True
     return (answer)
@@ -65,17 +64,23 @@ def sort_properties_ss_map(ss_map, latestVersion, propertyId, contractId, groupI
     http_response = http_request.get(urljoin(baseurl, '/papi/v1/properties/'+propertyId+'/versions/'+str(latestVersion)+'/rules?contractId='+contractId+'&groupId='+groupId+'&accountSwitchKey='+switchkey))
     http_status_code = http_response.status_code
     http_content = json.loads(http_response.text)
-   
-    if (("customBehavior" in http_response.text) or ("customOverride" in http_response.text) or ("advanced" in http_response.text) or ("advancedOverride" in http_response.text)):
+
+    if ("customBehavior" in http_response.text) or ("customOverride" in http_response.text):
         if (ss_map_apex in http_response.text):
             answer_list[0] = answer_list[0] + [contractId +' > '+ groupName + ' > ' + propertyName]
         else:
             answer_list[2] = answer_list[2] + [contractId +' > '+ groupName + ' > ' + propertyName]
     else:
-        if (ss_map in http_response.text):
-            answer_list[0] = answer_list[0] + [contractId +' > '+ groupName + ' > ' + propertyName]
+        if ("advanced" in http_response.text) or ("advancedOverride" in http_response.text):
+            if (ss_map_apex in http_response.text):
+                answer_list[0] = answer_list[0] + [contractId +' > '+ groupName + ' > ' + propertyName]
+            else:
+                answer_list[1] = answer_list[1] + [contractId +' > '+ groupName + ' > ' + propertyName]
         else:
-            answer_list[1] = answer_list[1] + [contractId +' > '+ groupName + ' > ' + propertyName]
+            if (ss_map in http_response.text):
+                answer_list[0] = answer_list[0] + [contractId +' > '+ groupName + ' > ' + propertyName]
+            else:
+                answer_list[1] = answer_list[1] + [contractId +' > '+ groupName + ' > ' + propertyName]
     return(answer_list)
 
 
@@ -113,6 +118,14 @@ def main():
     switchkey = args.switchkey
     enable_logs = args.enable_logs
     enable_map_check = args.enable_map_check
+
+    # SS Map Syntax Check
+
+    try:
+        ss_map_apex = re.search('(.*).akamai(.*)',ss_map).group(1)
+    except AttributeError:
+        print('The provided Site Shield Map has incorrect syntax.')
+        return()
 
     # SS Map Check Logic
     if enable_map_check == 'False':
@@ -167,9 +180,9 @@ def main():
                 if len_answer_list[0] + len_answer_list[1] + len_answer_list[2] == nb_properties:
                     print("\nInternal Script Check Success \n")
 
-                    print('There are '+str(len_answer_list[0])+' properties containing the '+ss_map+' Site Shield Map.')
-                    print('There are '+str(len_answer_list[1])+' properties that do not contain '+ss_map+' Site Shield Map.')
-                    print('There are '+str(len_answer_list[2])+' properties that need to be checked manually.')
+                    print('There is/are '+str(len_answer_list[0])+' propertie(s) containing the '+ss_map+' Site Shield Map.')
+                    print('There is/are '+str(len_answer_list[1])+' propertie(s) that do not contain '+ss_map+' Site Shield Map.')
+                    print('There is/are '+str(len_answer_list[2])+' propertie(s) that need to be checked manually.')
 
                     if len_answer_list[0] !=0:
                         print('\nThe following properties contain the '+ss_map+' Site Shield Map:')
@@ -178,7 +191,7 @@ def main():
                         print('\nThe following properties do not contain the '+ss_map+' Site Shield Map:')
                         print(*answer_list[1], sep = "\n")
                     if len_answer_list[2] !=0:
-                        print('\nThe following properties need to be checked manually since these do not contain the '+ss_map+' Site Shield Map in their json Rule Tree but do contain Advanced/Custom Behavior or Advanced/Custom Override.')
+                        print('\nThe following properties need to be checked manually since these do not contain the '+ss_map+' Site Shield Map in their json Rule Tree but do contain a Custom Behavior or a Custom Override.')
                         print(*answer_list[2], sep = "\n")
                 else:
                     print("\nInternal Script Check Failure \n ")
