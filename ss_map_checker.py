@@ -96,6 +96,11 @@ def main():
     nb_contracts = 0
     nb_properties = 0
     continue_after_check = False
+    ratio = 0
+    count = 0
+    plateau = 0
+    
+
 
     # defining inputs & argparse
     parser = argparse.ArgumentParser(prog="ss_map_checker.py v2.0", description="The ss_map_checker.py script finds all properties containing a given Site Shield Map, within a Customer Account. The script uses edgegrid for python, dnspython and argparse libraries. Contributors: Miko (mswider) as Chief Programmer")
@@ -120,7 +125,6 @@ def main():
     enable_map_check = args.enable_map_check
 
     # SS Map Syntax Check
-
     try:
         ss_map_apex = re.search('(.*).akamai(.*)',ss_map).group(1)
     except AttributeError:
@@ -166,13 +170,42 @@ def main():
                 print('There are '+str(nb_groups)+' groups, '+str(nb_contracts)+ ' contracts and '+str(nb_properties)+' properties in the '+str(switchkey)+' account.')
                 print('\nProcessing all properties. This operation may take several minutes...')
                 for bloc in dict_list:
+                    ratio = (count/float(nb_properties))*100
+                    count = count + 1
                     sorted = sort_properties_ss_map(ss_map, bloc['latestVersion'], bloc['propertyId'], bloc['contractId'], bloc['groupId'], bloc['groupName'], edgerc_path, section, switchkey, bloc['propertyName'])
                     answer_list[0] = answer_list[0] + sorted[0]
                     answer_list[1] = answer_list[1] + sorted[1]
                     answer_list[2] = answer_list[2] + sorted[2]
                     if enable_logs == 'True':
                         print('Processing property '+ bloc['propertyName'] + ' within contract ' + bloc['contractId'] + ' and group ' + bloc['groupName'] + '...')
-                
+                    if ratio > 10 and plateau == 0:
+                        print('10% Completed')
+                        plateau = 10
+                    if ratio > 20 and plateau == 10:
+                        print('20% Completed')
+                        plateau = 20
+                    if ratio > 30 and plateau == 20:
+                        print('30% Completed')
+                        plateau = 30
+                    if ratio > 40 and plateau == 30:
+                        print('40% Completed')
+                        plateau = 40
+                    if ratio > 50 and plateau == 40:
+                        print('50% Completed')
+                        plateau = 50
+                    if ratio > 60 and plateau == 50:
+                        print('60% Completed')
+                        plateau = 60
+                    if ratio > 70 and plateau == 60:
+                        print('70% Completed')
+                        plateau = 70
+                    if ratio > 80 and plateau == 70:
+                        print('80% Completed')
+                        plateau = 80
+                    if ratio > 90 and plateau == 80:
+                        print('90% Completed')
+                        plateau = 90
+
                 # Creating the length list
                 len_answer_list = [len(answer_list[0]),len(answer_list[1]),len(answer_list[2])]
 
